@@ -109,7 +109,8 @@ def evaluate(df: pl.DataFrame, product: str, models=MODELS) -> tuple[pl.DataFram
     """Returns (metrics table, out-of-sample predictions)."""
     metrics, preds = [], []
     for label in LABELS:
-        d = df.select(["ts_ns", "mid", *FEATURES, label]).drop_nulls().drop_nans()
+        exit_col = label.replace("fwd_", "spread_exit_")
+        d = df.select(["ts_ns", "mid", *FEATURES, label, exit_col]).drop_nulls().drop_nans()
         d = d.filter(pl.all_horizontal(pl.col(FEATURES).is_finite()))
         if d.height < 1000:
             continue
@@ -118,8 +119,9 @@ def evaluate(df: pl.DataFrame, product: str, models=MODELS) -> tuple[pl.DataFram
         y = d[label].to_numpy()
         folds = walk_forward(ts)
         for model in models:
-            p_all, y_all, fold_ics, idx_all = [], [], [], []
-            for f in folds:
+            p_all, y_all, fold_ics, idx_all, fold_id = [], [], [], [], []
+            for k, f in enumerate(folds):
+                fold_id.append(np.full(len(f.test), k))
                 p = fit_predict(model, X[f.train], y[f.train], X[f.test])
                 p_all.append(p), y_all.append(y[f.test]), idx_all.append(f.test)
                 fold_ics.append(spearman(p, y[f.test]))
@@ -138,7 +140,9 @@ def evaluate(df: pl.DataFrame, product: str, models=MODELS) -> tuple[pl.DataFram
             metrics.append(row)
             preds.append(pl.DataFrame({
                 "ts_ns": ts[idx], "horizon": label, "model": model, "pred": p, "y": yy,
+                "fold": np.concatenate(fold_id),
                 "spread_bps": d["spread_bps"].to_numpy()[idx],
+                "spread_exit_bps": d[exit_col].to_numpy()[idx],
             }))
     return pl.DataFrame(metrics), (pl.concat(preds) if preds else pl.DataFrame())
 

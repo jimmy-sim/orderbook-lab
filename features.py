@@ -28,6 +28,7 @@ rv_Ns             realised volatility: std of 100ms mid log returns over the las
 Labels (the future; never used as inputs)
 ------
 fwd_Hs            log return of mid from t to t+H seconds, in bp, H in HORIZONS
+spread_exit_Hs    spread at t+H (for costing an exit; not a label or a feature)
 """
 
 from __future__ import annotations
@@ -149,6 +150,9 @@ def build(book: pl.DataFrame, trades: pl.DataFrame | None = None,
         cols.append(pl.col("r1").rolling_std(rows(w)).over(seg).alias(f"rv_{w}s"))
     for h in HORIZONS_S:
         cols.append(((lag(pl.col("logmid"), -rows(h)) - pl.col("logmid")) * 1e4).alias(f"fwd_{h}s"))
+        # spread at exit time, used only by the cost analysis (never as an input)
+        cols.append(lag(((pl.col("ask_px_1") - pl.col("bid_px_1")) / pl.col("mid") * 1e4), -rows(h))
+                    .alias(f"spread_exit_{h}s"))
 
     # every window above is partitioned by `seg`, so it returns null near segment edges
     df = df.with_columns(cols)

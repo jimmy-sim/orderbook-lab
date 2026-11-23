@@ -8,6 +8,8 @@ Writes to results/:
   feature_ic.csv       rank correlation of each feature with each future move
   model_metrics.csv    out-of-sample IC / hit rate by model and horizon
   predictions_<product>.parquet   out-of-sample predictions (input to the cost analysis)
+  cost_trades.csv      toy strategy: trades, gross edge, spread, break-even fees, net P&L
+  cost_fee_grid.csv    net P&L per trade under each fee tier, best setting per horizon
 """
 
 from __future__ import annotations
@@ -18,6 +20,7 @@ from pathlib import Path
 
 import polars as pl
 
+import costs as C
 import evaluate as E
 import features as F
 
@@ -45,7 +48,7 @@ def main() -> None:
     products = args.products or sorted(p.name.split("=", 1)[1] for p in (args.data / "book").glob("product=*"))
     RESULTS.mkdir(exist_ok=True)
 
-    summaries, fics, metrics = [], [], []
+    summaries, fics, metrics, ctrades, cgrids = [], [], [], [], []
     for product in products:
         t = time.time()
         df = F.build_product(product, args.data)
@@ -57,6 +60,8 @@ def main() -> None:
         if m.height:
             metrics.append(m)
             preds.write_parquet(RESULTS / f"predictions_{product}.parquet")
+            ct, cg = C.run(product, RESULTS)
+            ctrades.append(ct), cgrids.append(cg)
         print(f"[{product}] evaluated ({time.time() - t:.1f}s)")
 
     pl.DataFrame(summaries).write_csv(RESULTS / "data_summary.csv")
@@ -71,6 +76,16 @@ def main() -> None:
                            "fold_ic_std", "hit", "flat", "abs_move_bps", "auc"))
         else:
             print("not enough data to evaluate yet")
+        if ctrades:
+            ct = pl.concat(ctrades, how="diagonal")
+            ct.write_csv(RESULTS / "cost_trades.csv")
+            print(ct.select("product", "horizon", "model", "top_q", "trades", "trades_per_day", "hit",
+                            "gross_bps", "spread_bps", "breakeven_taker_fee_bps", "taker_net_bps",
+                            "breakeven_maker_fee_bps", "maker_net_bps_optimistic"))
+            cg = pl.concat([g for g in cgrids if g.height], how="diagonal") if any(g.height for g in cgrids) else None
+            if cg is not None:
+                cg.write_csv(RESULTS / "cost_fee_grid.csv")
+                print(cg)
 
 
 if __name__ == "__main__":

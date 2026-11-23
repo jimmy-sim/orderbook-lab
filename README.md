@@ -49,3 +49,9 @@ uv run pytest -q             # checks on hand-built data (no look-ahead, gaps re
   a 120s embargo between train and test. Models: imbalance-only linear regression, all-feature
   linear and logistic regression, gradient-boosted trees. Reports information coefficient
   (rank correlation) and hit rate by horizon.
+- [costs.py](costs.py): a toy one-position-at-a-time strategy on the out-of-sample
+  predictions. It trades only the top q% most confident signals, with the cut-off taken from
+  earlier test folds only. It reports the gross edge per trade, the spread paid, the
+  break-even taker and maker fees, and net P&L under a grid of Coinbase fee tiers. Coinbase
+  doesn't publish one public fee table (your rates appear on your own Advanced fees page),
+  so set `REFERENCE` in `costs.py` to your tier.
