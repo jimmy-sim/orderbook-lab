@@ -1,0 +1,15 @@
+[project]
+name = "orderbook-lab"
+version = "0.1.0"
+description = "Short-horizon price prediction from Coinbase order book data (research only)"
+authors = [
+    { name = "Jimmy-Sim", email = "77947780+jimmy-sim@users.noreply.github.com" }
+]
+requires-python = ">=3.12"
+dependencies = [
+    "numpy>=2.5.5",
+    "polars>=2.1.0",
+    "pyarrow>=26.0.1",
+    "sortedcontainers>=2.4.0",
+    "websockets>=17.4",
+]
