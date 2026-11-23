@@ -18,6 +18,9 @@ What it does
   book is rebuilt from scratch. Every such gap is appended to data/gaps.jsonl so the
   analysis can skip those windows.
 * Missed trades are detected from jumps in Coinbase's consecutive trade ids.
+* After a pause (laptop sleep, process frozen) the local book is stale. The recorder
+  notices the late clock tick, discards the book and resyncs; it also stops saving rows
+  whenever no message has arrived for QUIET_ROW_S seconds.
 
 Run:  uv run python recorder.py               (BTC-USD and ETH-USD)
       uv run python recorder.py --products BTC-USD --minutes 5
@@ -45,6 +48,8 @@ DEPTH = 10          # levels per side saved in each snapshot
 SAMPLE_MS = 100     # snapshot interval
 FLUSH_S = 300       # how often buffered rows are written to disk
 STALE_S = 15        # reconnect if no message for this long
+QUIET_ROW_S = 3     # don't save book rows if no message has arrived for this long
+JUMP_S = 2          # a sampler tick this late means the process was asleep/frozen
 DATA = Path(__file__).parent / "data"
 
 log = logging.getLogger("recorder")
@@ -133,7 +138,8 @@ class Recorder:
         self.sink = Sink(root)
         self.books = {p: Book() for p in products}
         self.last_trade_id: dict[str, int] = {}
-        self.last_msg = time.monotonic()
+        self.last_msg_ns = time.time_ns()   # wall clock: keeps counting through laptop sleep
+        self.ws = None
         self.disconnected_at_ns: int | None = None
         self.stop = asyncio.Event()
 
@@ -176,9 +182,19 @@ class Recorder:
     async def sampler(self) -> None:
         step = SAMPLE_MS * 1_000_000
         nxt = (time.time_ns() // step + 1) * step
+        last_tick = time.time_ns()
         while not self.stop.is_set():
             await asyncio.sleep(max(0.0, (nxt - time.time_ns()) / 1e9))
             now = time.time_ns()
+            if now - last_tick > JUMP_S * 1e9:
+                # We were asleep (lid closed) or frozen. The local book missed every
+                # update in between, so it is stale: drop it and force a fresh snapshot.
+                self.force_resync(f"woke after {(now - last_tick) / 1e9:.1f}s pause", since_ns=last_tick)
+            last_tick = now
+            if now - self.last_msg_ns > QUIET_ROW_S * 1e9:
+                # feed has gone quiet: the book may be stale, so save nothing until it's back
+                nxt = max(nxt + step, (now // step + 1) * step)
+                continue
             for p, b in self.books.items():
                 if not b.synced or not b.bids or not b.asks:
                     continue
@@ -194,6 +210,15 @@ class Recorder:
             # skip missed slots if we fell behind (e.g. the laptop slept)
             nxt = max(nxt + step, (now // step + 1) * step)
 
+    def force_resync(self, reason: str, since_ns: int) -> None:
+        log.warning("forcing resync: %s", reason)
+        for b in self.books.values():
+            b.synced = False
+        if self.disconnected_at_ns is None:
+            self.disconnected_at_ns = since_ns
+        if self.ws is not None:
+            asyncio.create_task(self.ws.close())  # session() sees the close and reconnects
+
     async def flusher(self) -> None:
         while not self.stop.is_set():
             try:
@@ -206,7 +231,9 @@ class Recorder:
     async def session(self) -> None:
         sub = {"type": "subscribe", "product_ids": self.products,
                "channels": ["level2_batch", "matches", "heartbeat"]}
-        async with websockets.connect(URL, max_size=2**25, ping_interval=20, ping_timeout=20) as ws:
+        async with websockets.connect(URL, max_size=2**25, ping_interval=20, ping_timeout=20,
+                                      close_timeout=1) as ws:
+            self.ws = ws
             await ws.send(json.dumps(sub))
             log.info("connected, subscribed to %s", self.products)
             for b in self.books.values():
@@ -217,7 +244,7 @@ class Recorder:
                 except asyncio.TimeoutError:
                     raise ConnectionError(f"no message for {STALE_S}s")
                 recv_ns = time.time_ns()
-                self.last_msg = time.monotonic()
+                self.last_msg_ns = recv_ns
                 msg = json.loads(raw)
                 t = msg.get("type")
                 if t == "l2update":
@@ -252,7 +279,8 @@ class Recorder:
                 raise
             except Exception as e:  # noqa: BLE001 - any failure means reconnect
                 if self.disconnected_at_ns is None:
-                    self.disconnected_at_ns = time.time_ns()
+                    # the outage really began at the last message we received
+                    self.disconnected_at_ns = self.last_msg_ns
                 for b in self.books.values():
                     b.synced = False
                 if time.monotonic() - started > 60:
