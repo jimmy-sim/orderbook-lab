@@ -33,3 +33,19 @@ For a short foreground test: `uv run python recorder.py --products BTC-USD --min
   50ms batches (Coinbase reports it as `level2_50`).
 - In Coinbase `match` messages, `side` is the **maker's** side. The recorder converts it to
   `taker_side` (who crossed the spread), which is what trade-flow features need.
+
+## Features and evaluation
+
+```bash
+uv run python run_all.py     # features -> walk-forward models -> results/*.csv
+uv run pytest -q             # checks on hand-built data (no look-ahead, gaps respected)
+```
+
+- [features.py](features.py): spread, order book imbalance at depths 1/3/5/10, microprice,
+  trade-flow imbalance (1/5/30s), recent returns and realised volatility. Labels are future
+  mid returns at 1/5/30/60s, in basis points. Data is split into *segments* at every hole
+  or resync, and no window or label crosses a segment edge.
+- [evaluate.py](evaluate.py): expanding walk-forward in time order (never shuffled), with
+  a 120s embargo between train and test. Models: imbalance-only linear regression, all-feature
+  linear and logistic regression, gradient-boosted trees. Reports information coefficient
+  (rank correlation) and hit rate by horizon.
