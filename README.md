@@ -25,6 +25,19 @@ uv sync
 Rows are buffered and written every 5 minutes, so a crash loses at most 5 minutes.
 Closing a MacBook's lid on battery will still sleep it; that shows up as a gap.
 
+### Always-on machine (e.g. a Mac Mini)
+
+```bash
+gh repo clone jimmy-sim/orderbook-lab ~/orderbook-lab   # outside Desktop/Documents (macOS blocks background access there)
+cd ~/orderbook-lab && uv sync
+./recorder.sh install    # starts now, at every login, and again after a crash
+```
+
+Also, in System Settings, turn on *Prevent automatic sleeping when the display is off* and
+*Start up automatically after a power failure*. The recorder starts when you log in, so turn
+on automatic login too, or log in once after each restart. `./recorder.sh uninstall` turns
+always-on mode off.
+
 For a short foreground test: `uv run python recorder.py --products BTC-USD --minutes 2 --flush 30`.
 
 ## Notes on the feed
