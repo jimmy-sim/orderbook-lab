@@ -26,9 +26,15 @@ How well the models predict, measured only on data they never trained on:
 
 \*Counting only the times the price actually moved. 50% is a coin flip.
 
+![Average price move one second later, by order book imbalance: a rising curve from about −0.4 bps when sellers dominate the best price to about +0.4 bps when buyers dominate](docs/signal.png)
+
+![Out-of-sample rank correlation by horizon: BTC falls from 0.36 at 1 second to 0.04 at 60 seconds; ETH from 0.10 to near zero](docs/decay.png)
+
 - **Fast decay:** the signal is strong at 1 second and almost gone by 60 seconds.
 - **One feature does most of the work:** the imbalance between bid and ask size at the best price reaches 0.32 on its own, against 0.36 for all features combined. Gradient-boosted trees do no better.
 - **The fees swamp the edge:** even the most confident signals earn about 1–4 basis points (0.01–0.04%) per trade before costs. A round trip at a typical retail taker fee costs about 120 bps. Even the top-volume fee tier (10 bps round trip) loses money. The only scenario that comes out positive is an optimistic maker case that assumes every passive order fills, which real markets don't allow.
+
+![Best BTC gross edge per trade, 3.8 bps, next to round-trip taker fees from 10 bps (high-volume tier) to 240 bps (highest retail tier)](docs/edge_vs_fees.png)
 
 The takeaway: the edge lives at a fraction of a basis point. That's why short-horizon trading is a business of fee rebates, speed and enormous volume, not clever models alone.
 
@@ -56,6 +62,7 @@ flowchart LR
 | [`evaluate.py`](evaluate.py) | Trains four models (from a one-feature baseline to gradient-boosted trees) and scores them on future data only. |
 | [`costs.py`](costs.py) | Simulates a simple one-position-at-a-time strategy on the predictions and computes profit after spread and fees across six fee tiers. |
 | [`run_all.py`](run_all.py) | One command runs the whole pipeline, from raw data to results, in about 90 seconds. |
+| [`plots.py`](plots.py) | Redraws the charts in this README from the latest results. |
 | [`tests/`](tests) | Checks the subtle parts on hand-built data (see below). |
 
 ---
@@ -86,6 +93,7 @@ uv run pytest -q                                                      # 10 tests
 ./recorder.sh start      # record in the background
 ./recorder.sh status     # running? disk used? gaps?
 uv run python run_all.py # rebuild every result into results/
+uv run python plots.py   # redraw the charts in docs/
 ```
 
 For 24/7 recording on an always-on machine such as a Mac Mini, run `./recorder.sh install`. It starts at login and restarts after a crash. Keep the repo outside Desktop and Documents, because macOS blocks background access there. In System Settings, also turn on *Prevent automatic sleeping when the display is off* and *Start up automatically after a power failure*.
