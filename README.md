@@ -63,6 +63,7 @@ flowchart LR
 | [`costs.py`](costs.py) | Simulates a simple one-position-at-a-time strategy on the predictions and computes profit after spread and fees across six fee tiers. |
 | [`run_all.py`](run_all.py) | One command runs the whole pipeline, from raw data to results; runtime grows with the recording. |
 | [`plots.py`](plots.py) | Redraws the figures in this README from the latest results as clean SVGs. |
+| [`automation.sh`](automation.sh) | On macOS, installs a daily launchd job that runs the evaluation and redraws the figures. |
 | [`tests/`](tests) | Checks the subtle parts on hand-built data (see below). |
 
 ---
@@ -97,6 +98,8 @@ uv run python plots.py   # redraw the charts in docs/
 ```
 
 For 24/7 recording on an always-on machine such as a Mac Mini, run `./recorder.sh install`. It starts at login and restarts after a crash. Keep the repo outside Desktop and Documents, because macOS blocks background access there. In System Settings, also turn on *Prevent automatic sleeping when the display is off* and *Start up automatically after a power failure*.
+
+To refresh results and charts automatically on that Mac, run `./automation.sh install` once. It starts an evaluation immediately and then runs daily at 4:00 AM local time. The recorder keeps running during evaluation; it writes complete Parquet files atomically. Check `./automation.sh status` for the last run and `logs/automation.log` for details. Run `./automation.sh uninstall` to remove only the daily job. Charts in `docs/` change after each run; review them before committing. The written interpretation in this README still needs human review when the findings change.
 
 Data goes to `data/` and results to `results/`. Neither is committed. The recorder adds about 200 MB a day for two products.
 
